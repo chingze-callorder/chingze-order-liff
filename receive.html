@@ -48,6 +48,45 @@
     margin-top:20px; background:white; border:1.5px dashed var(--line-border);
     border-radius:14px; padding:24px; text-align:center; color:var(--ink-soft); font-size:13.5px; line-height:1.7;
   }
+  .order-card{
+    background:white; border:1.5px solid var(--line-border); border-radius:14px; padding:14px; margin-bottom:14px;
+  }
+  .order-card .oc-head{margin-bottom:10px;}
+  .order-card .oc-id{font-size:13.5px; font-weight:800; color:var(--teal-dark);}
+  .order-card .oc-meta{font-size:11.5px; color:var(--ink-soft); margin-top:2px;}
+  .receive-item{
+    border-top:1px dashed var(--line-border); padding:10px 0; display:flex; align-items:center; gap:12px;
+  }
+  .check-circle{
+    width:26px; height:26px; border-radius:50%; border:2px solid var(--line-border);
+    display:flex; align-items:center; justify-content:center; font-size:14px; color:white;
+    flex-shrink:0; cursor:pointer;
+  }
+  .check-circle.on{background:#4a7d5c; border-color:#4a7d5c;}
+  .receive-info{flex:1;}
+  .receive-info .name{font-weight:700; font-size:14px;}
+  .receive-info .meta{font-size:11px; color:var(--ink-soft); margin-top:2px;}
+  .qtybox-wrap{display:flex; align-items:center; gap:6px; flex-shrink:0;}
+  .qty-box{
+    min-width:44px; text-align:center; padding:6px 10px; border-radius:10px; background:var(--teal);
+    color:white; font-weight:800; font-size:14px; cursor:pointer;
+  }
+  .qty-input{
+    width:56px; text-align:center; padding:5px 4px; border-radius:10px; border:1.5px solid var(--gold);
+    font-weight:800; font-size:14px; background:var(--gold-light);
+  }
+  .receiver-auto{
+    margin-top:10px; background:var(--teal-light); border:1.5px solid var(--teal); border-radius:12px;
+    padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+  .receiver-name{font-size:15px; font-weight:800; color:var(--teal-dark); display:flex; align-items:center; gap:8px;}
+  .receiver-tag{font-size:10px; font-weight:700; background:white; color:var(--teal-dark); padding:2px 8px; border-radius:999px;}
+  .switch-link{background:none; border:none; color:var(--teal-dark); font-size:12px; font-weight:700; text-decoration:underline; cursor:pointer;}
+  .receive-submit-btn{
+    width:100%; background:var(--teal); color:white; border:none; padding:12px;
+    border-radius:12px; font-size:14px; font-weight:800; cursor:pointer; margin-top:12px;
+  }
+  .receive-submit-btn:disabled{background:#c9c2b5;}
 </style>
 </head>
 <body>
@@ -79,10 +118,17 @@
 <div id="main-content" class="wrap" style="display:none;">
   <div class="status-badge">👤 <span id="user-name-display"></span>　<span id="user-role-display"></span></div>
 
-  <div class="placeholder-card">
-    ✅ 身份確認成功！<br><br>
-    「門市驗收」的到貨確認、寫入門市進貨單功能<br>正在建置中，下一階段就會上線。
+  <div class="section-label">驗收門市（每次驗收都要選）</div>
+  <div class="chip-row" id="store-row">
+    <div class="chip sel" data-store="正氣店">正氣店</div>
+    <div class="chip" data-store="鐵花館">鐵花館</div>
   </div>
+
+  <div class="section-label" style="display:flex; justify-content:space-between; align-items:center;">
+    <span>待驗收清單</span>
+    <span style="cursor:pointer; color:var(--teal-dark); font-weight:700;" onclick="loadShippedOrders()">🔄 重新整理</span>
+  </div>
+  <div id="shipped-list"></div>
 </div>
 
 <script>
@@ -156,11 +202,147 @@ document.getElementById('bind-submit-btn').addEventListener('click', function(){
   });
 });
 
+var RECEIVER_OPTIONS = ['劉亭佑', '許茹文', '方潘璇錚', '陳秀娟', '林孜璇', '賴婷揚', '其他'];
+var selectedStore = '正氣店';
+var currentReceiver = '';
+var receiveState = {}; // orderId -> {qty:{code:qty}, checked:{code:bool}, shipped:{code:qty}}
+
 function showMainContent(name, role){
   document.getElementById('bind-form').style.display = 'none';
   document.getElementById('user-name-display').textContent = name;
   document.getElementById('user-role-display').textContent = '（' + role + '人員）';
   document.getElementById('main-content').style.display = 'block';
+  window.currentUserName = name;
+  currentReceiver = name;
+  bindStoreRow();
+  loadShippedOrders();
+}
+
+function bindStoreRow(){
+  document.getElementById('store-row').addEventListener('click', function(e){
+    var chip = e.target.closest('.chip');
+    if (!chip) return;
+    document.querySelectorAll('#store-row .chip').forEach(function(c){ c.classList.remove('sel'); });
+    chip.classList.add('sel');
+    selectedStore = chip.dataset.store;
+    loadShippedOrders();
+  });
+}
+
+function loadShippedOrders(){
+  var list = document.getElementById('shipped-list');
+  list.innerHTML = '<div class="placeholder-card">載入中...</div>';
+  apiGet('getShippedOrders', { store: selectedStore }, function(orders){
+    if (!orders || orders.length === 0) {
+      list.innerHTML = '<div class="placeholder-card">' + selectedStore + ' 目前沒有待驗收的叫貨單</div>';
+      return;
+    }
+    receiveState = {};
+    list.innerHTML = orders.map(renderShippedCard).join('');
+  }, function(err){
+    list.innerHTML = '<div class="placeholder-card">載入失敗，請點「重新整理」再試一次</div>';
+  });
+}
+
+function renderShippedCard(order){
+  receiveState[order.orderId] = { qty: {}, checked: {}, shipped: {} };
+  order.items.forEach(function(it){
+    receiveState[order.orderId].qty[it.code] = it.shippedQty;
+    receiveState[order.orderId].shipped[it.code] = it.shippedQty;
+    receiveState[order.orderId].checked[it.code] = false;
+  });
+
+  var itemsHtml = order.items.map(function(it){
+    return '<div class="receive-item" id="ritem-' + order.orderId + '-' + it.code + '">' +
+      '<div class="check-circle" onclick="toggleCheck(\'' + order.orderId + '\',\'' + it.code + '\')" id="chk-' + order.orderId + '-' + it.code + '">✓</div>' +
+      '<div class="receive-info"><div class="name">' + it.name + '</div>' +
+      '<div class="meta">' + it.spec + '　出貨數量：' + it.shippedQty + '</div></div>' +
+      '<div class="qtybox-wrap"><div class="qty-box" id="qbox-' + order.orderId + '-' + it.code + '" onclick="openQtyInput(\'' + order.orderId + '\',\'' + it.code + '\')">' + it.shippedQty + '</div></div>' +
+      '</div>';
+  }).join('');
+
+  var receiverOptionsHtml = RECEIVER_OPTIONS.map(function(r){
+    return '<div class="chip" onclick="selReceiver(\'' + order.orderId + '\',this,\'' + r + '\')">' + r + '</div>';
+  }).join('');
+
+  return '<div class="order-card" id="order-' + order.orderId + '">' +
+    '<div class="oc-head">' +
+    '<div class="oc-id">' + order.orderId + '</div>' +
+    '<div class="oc-meta">出貨時間：' + order.time + '　配送人員：' + order.deliverer + '</div>' +
+    '</div>' +
+    itemsHtml +
+    '<div class="receiver-auto" id="receiver-auto-' + order.orderId + '">' +
+    '<div class="receiver-name">👤 <span id="receiver-name-' + order.orderId + '">' + currentReceiver + '</span><span class="receiver-tag">目前 LINE 帳號</span></div>' +
+    '<button class="switch-link" onclick="toggleReceiverSwitch(\'' + order.orderId + '\')">不是我，換人 →</button>' +
+    '</div>' +
+    '<div id="receiver-switch-' + order.orderId + '" class="chip-row" style="display:none; margin-top:8px;">' + receiverOptionsHtml + '</div>' +
+    '<button class="receive-submit-btn" id="submitbtn-' + order.orderId + '" onclick="submitReceiveOrder(\'' + order.orderId + '\')">確認驗收 送出</button>' +
+    '</div>';
+}
+
+function toggleCheck(orderId, code){
+  var s = receiveState[orderId];
+  s.checked[code] = !s.checked[code];
+  document.getElementById('chk-' + orderId + '-' + code).classList.toggle('on', s.checked[code]);
+  document.getElementById('ritem-' + orderId + '-' + code).style.background = s.checked[code] ? 'var(--teal-light)' : 'transparent';
+}
+
+function openQtyInput(orderId, code){
+  var box = document.getElementById('qbox-' + orderId + '-' + code);
+  if (!box) return;
+  var current = box.textContent.trim();
+  box.outerHTML = '<input type="number" inputmode="numeric" pattern="[0-9]*" class="qty-input" id="qbox-' + orderId + '-' + code + '" value="' + current + '" onblur="commitQtyInput(\'' + orderId + '\',\'' + code + '\')" onkeydown="if(event.key===\'Enter\'){this.blur();}">';
+  var input = document.getElementById('qbox-' + orderId + '-' + code);
+  input.focus();
+  input.select();
+}
+
+function commitQtyInput(orderId, code){
+  var input = document.getElementById('qbox-' + orderId + '-' + code);
+  if (!input) return;
+  var val = parseInt(input.value, 10);
+  if (isNaN(val) || val < 0) val = 0;
+  receiveState[orderId].qty[code] = val;
+  input.outerHTML = '<div class="qty-box" id="qbox-' + orderId + '-' + code + '" onclick="openQtyInput(\'' + orderId + '\',\'' + code + '\')">' + val + '</div>';
+}
+
+function toggleReceiverSwitch(orderId){
+  var el = document.getElementById('receiver-switch-' + orderId);
+  el.style.display = (el.style.display === 'none') ? 'flex' : 'none';
+  el.style.flexWrap = 'wrap';
+}
+
+function selReceiver(orderId, elm, name){
+  document.querySelectorAll('#receiver-switch-' + orderId + ' .chip').forEach(function(c){ c.classList.remove('sel'); });
+  elm.classList.add('sel');
+  document.getElementById('receiver-name-' + orderId).textContent = name;
+  document.querySelector('#receiver-auto-' + orderId + ' .receiver-tag').textContent = '手動更換';
+  document.getElementById('receiver-switch-' + orderId).style.display = 'none';
+  receiveState[orderId].receiverOverride = name;
+}
+
+function submitReceiveOrder(orderId){
+  var s = receiveState[orderId];
+  var receiverName = s.receiverOverride || currentReceiver;
+  var items = Object.keys(s.qty).map(function(code){ return { code: code, qty: s.qty[code] }; });
+
+  var btn = document.getElementById('submitbtn-' + orderId);
+  btn.disabled = true;
+  btn.textContent = '送出中...';
+  apiPost('submitReceive', {
+    userId: currentUserId,
+    name: window.currentUserName,
+    orderId: orderId,
+    receiverName: receiverName,
+    items: JSON.stringify(items)
+  }, function(result){
+    var card = document.getElementById('order-' + orderId);
+    card.outerHTML = '<div class="placeholder-card" style="border-color:var(--teal); border-style:solid;">✅ ' + orderId + ' 驗收完成，已寫入批次編號 ' + result.trId + '</div>';
+  }, function(err){
+    btn.disabled = false;
+    btn.textContent = '確認驗收 送出';
+    alert('送出失敗，請再試一次：' + err);
+  });
 }
 
 function init(){
