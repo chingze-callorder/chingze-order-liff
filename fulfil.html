@@ -48,6 +48,46 @@
     margin-top:20px; background:white; border:1.5px dashed var(--line-border);
     border-radius:14px; padding:24px; text-align:center; color:var(--ink-soft); font-size:13.5px; line-height:1.7;
   }
+  .order-card{
+    background:white; border:1.5px solid var(--line-border); border-radius:14px; padding:14px; margin-bottom:14px;
+  }
+  .order-card .oc-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;}
+  .order-card .oc-id{font-size:13.5px; font-weight:800; color:var(--teal-dark);}
+  .order-card .oc-meta{font-size:11.5px; color:var(--ink-soft); margin-top:2px;}
+  .order-card .oc-store{
+    background:var(--gold-light); color:#7a5b13; font-size:11px; font-weight:800;
+    padding:3px 10px; border-radius:999px; flex-shrink:0;
+  }
+  .fulfil-item{border-top:1px dashed var(--line-border); padding:10px 0;}
+  .fulfil-item .fi-name{font-weight:700; font-size:14px;}
+  .fulfil-item .fi-spec{font-size:11.5px; color:var(--ink-soft); margin:2px 0 8px;}
+  .fulfil-row{display:flex; align-items:center; justify-content:space-between;}
+  .fulfil-row .ordered{font-size:12px; color:var(--ink-soft);}
+  .fulfil-row .ordered b{color:var(--ink);}
+  .qtybox-wrap{display:flex; align-items:center; gap:6px;}
+  .qty-box{
+    min-width:44px; text-align:center; padding:6px 10px; border-radius:10px; background:var(--teal);
+    color:white; font-weight:800; font-size:14px; cursor:pointer;
+  }
+  .qty-input{
+    width:56px; text-align:center; padding:5px 4px; border-radius:10px; border:1.5px solid var(--gold);
+    font-weight:800; font-size:14px; background:var(--gold-light);
+  }
+  .wh-row{display:flex; gap:6px; margin-top:8px;}
+  .wh-pill{
+    padding:5px 10px; border-radius:8px; border:1px solid var(--line-border); background:var(--cream);
+    font-size:11px; font-weight:700; color:var(--ink-soft); cursor:pointer;
+  }
+  .wh-pill.sel{background:var(--teal-light); border-color:var(--teal); color:var(--teal-dark);}
+  .short-flag{
+    margin-top:6px; background:#fbe4de; color:#c0503d; font-size:11px; font-weight:700;
+    padding:5px 9px; border-radius:8px; display:inline-block;
+  }
+  .fulfil-submit-btn{
+    width:100%; background:var(--teal); color:white; border:none; padding:12px;
+    border-radius:12px; font-size:14px; font-weight:800; cursor:pointer; margin-top:12px;
+  }
+  .fulfil-submit-btn:disabled{background:#c9c2b5;}
 </style>
 </head>
 <body>
@@ -79,10 +119,11 @@
 <div id="main-content" class="wrap" style="display:none;">
   <div class="status-badge">👤 <span id="user-name-display"></span>　<span id="user-role-display"></span></div>
 
-  <div class="placeholder-card">
-    ✅ 身份確認成功！<br><br>
-    「倉庫備貨」的出貨數量確認、缺貨標記、<br>推播通知功能正在建置中，下一階段就會上線。
+  <div class="section-label" style="display:flex; justify-content:space-between; align-items:center;">
+    <span>待備貨清單</span>
+    <span style="cursor:pointer; color:var(--teal-dark); font-weight:700;" onclick="loadPendingOrders()">🔄 重新整理</span>
   </div>
+  <div id="pending-list"></div>
 </div>
 
 <script>
@@ -156,11 +197,124 @@ document.getElementById('bind-submit-btn').addEventListener('click', function(){
   });
 });
 
+var WAREHOUSES = ['A倉', 'B倉', 'CC倉'];
+var orderState = {}; // orderId -> {qty:{code:qty}, wh:{code:warehouse}, ordered:{code:qty}}
+
 function showMainContent(name, role){
   document.getElementById('bind-form').style.display = 'none';
   document.getElementById('user-name-display').textContent = name;
   document.getElementById('user-role-display').textContent = '（' + role + '人員）';
   document.getElementById('main-content').style.display = 'block';
+  window.currentUserName = name;
+  loadPendingOrders();
+}
+
+function loadPendingOrders(){
+  var list = document.getElementById('pending-list');
+  list.innerHTML = '<div class="placeholder-card">載入中...</div>';
+  apiGet('getPendingOrders', {}, function(orders){
+    if (!orders || orders.length === 0) {
+      list.innerHTML = '<div class="placeholder-card">目前沒有待備貨的叫貨單 👍</div>';
+      return;
+    }
+    orderState = {};
+    list.innerHTML = orders.map(renderOrderCard).join('');
+  }, function(err){
+    list.innerHTML = '<div class="placeholder-card">載入失敗，請點「重新整理」再試一次</div>';
+  });
+}
+
+function renderOrderCard(order){
+  orderState[order.orderId] = { qty: {}, wh: {}, ordered: {} };
+  order.items.forEach(function(it){
+    orderState[order.orderId].qty[it.code] = it.qty;
+    orderState[order.orderId].wh[it.code] = 'A倉';
+    orderState[order.orderId].ordered[it.code] = it.qty;
+  });
+
+  var itemsHtml = order.items.map(function(it){
+    var whPills = WAREHOUSES.map(function(w, idx){
+      return '<div class="wh-pill' + (idx===0?' sel':'') + '" onclick="selItemWarehouse(\'' + order.orderId + '\',\'' + it.code + '\',this,\'' + w + '\')">' + w + '</div>';
+    }).join('');
+    return '<div class="fulfil-item">' +
+      '<div class="fi-name">' + it.name + '</div>' +
+      '<div class="fi-spec">' + it.spec + '　' + it.code + '</div>' +
+      '<div class="fulfil-row">' +
+      '<div class="ordered">叫貨數量：<b>' + it.qty + '</b></div>' +
+      '<div class="qtybox-wrap">' +
+      '<div class="qty-box" id="qbox-' + order.orderId + '-' + it.code + '" onclick="openQtyInput(\'' + order.orderId + '\',\'' + it.code + '\')">' + it.qty + '</div>' +
+      '</div></div>' +
+      '<div class="wh-row" id="wh-' + order.orderId + '-' + it.code + '">' + whPills + '</div>' +
+      '<div class="short-flag" id="short-' + order.orderId + '-' + it.code + '" style="display:none;"></div>' +
+      '</div>';
+  }).join('');
+
+  return '<div class="order-card" id="order-' + order.orderId + '">' +
+    '<div class="oc-head">' +
+    '<div><div class="oc-id">' + order.orderId + '</div><div class="oc-meta">' + order.time + '　叫貨人：' + order.orderer + '</div></div>' +
+    '<div class="oc-store">' + order.store + '</div>' +
+    '</div>' +
+    itemsHtml +
+    '<button class="fulfil-submit-btn" id="submitbtn-' + order.orderId + '" onclick="submitFulfilOrder(\'' + order.orderId + '\')">確認出貨</button>' +
+    '</div>';
+}
+
+function selItemWarehouse(orderId, code, elm, w){
+  document.querySelectorAll('#wh-' + orderId + '-' + code + ' .wh-pill').forEach(function(x){ x.classList.remove('sel'); });
+  elm.classList.add('sel');
+  orderState[orderId].wh[code] = w;
+}
+
+function openQtyInput(orderId, code){
+  var box = document.getElementById('qbox-' + orderId + '-' + code);
+  if (!box) return;
+  var current = box.textContent.trim();
+  box.outerHTML = '<input type="number" inputmode="numeric" pattern="[0-9]*" class="qty-input" id="qbox-' + orderId + '-' + code + '" value="' + current + '" onblur="commitQtyInput(\'' + orderId + '\',\'' + code + '\')" onkeydown="if(event.key===\'Enter\'){this.blur();}">';
+  var input = document.getElementById('qbox-' + orderId + '-' + code);
+  input.focus();
+  input.select();
+}
+
+function commitQtyInput(orderId, code){
+  var input = document.getElementById('qbox-' + orderId + '-' + code);
+  if (!input) return;
+  var val = parseInt(input.value, 10);
+  if (isNaN(val) || val < 0) val = 0;
+  orderState[orderId].qty[code] = val;
+  input.outerHTML = '<div class="qty-box" id="qbox-' + orderId + '-' + code + '" onclick="openQtyInput(\'' + orderId + '\',\'' + code + '\')">' + val + '</div>';
+
+  var ordered = orderState[orderId].ordered[code];
+  var flag = document.getElementById('short-' + orderId + '-' + code);
+  if (val < ordered) {
+    flag.style.display = 'inline-block';
+    flag.textContent = '⚠ 今日缺貨 ' + (ordered - val) + '（原叫貨 ' + ordered + '，出貨 ' + val + '）';
+  } else {
+    flag.style.display = 'none';
+  }
+}
+
+function submitFulfilOrder(orderId){
+  var state = orderState[orderId];
+  var items = Object.keys(state.qty).map(function(code){
+    return { code: code, qty: state.qty[code], warehouse: state.wh[code] };
+  });
+  var btn = document.getElementById('submitbtn-' + orderId);
+  btn.disabled = true;
+  btn.textContent = '送出中...';
+  apiPost('submitFulfil', {
+    userId: currentUserId,
+    name: window.currentUserName,
+    orderId: orderId,
+    items: JSON.stringify(items)
+  }, function(result){
+    var card = document.getElementById('order-' + orderId);
+    var note = result.shortCount > 0 ? '（' + result.shortCount + ' 項今日缺貨）' : '';
+    card.outerHTML = '<div class="placeholder-card" style="border-color:var(--teal); border-style:solid;">✅ ' + orderId + ' 已完成出貨 ' + note + '</div>';
+  }, function(err){
+    btn.disabled = false;
+    btn.textContent = '確認出貨';
+    alert('送出失敗，請再試一次：' + err);
+  });
 }
 
 function init(){
