@@ -568,7 +568,7 @@ document.getElementById('submit-order-btn').addEventListener('click', function()
   if (codes.length === 0) return;
   var items = codes.map(function(c){
     var p = PRODUCTS.find(function(x){ return x.c === c; });
-    return { code: p.c, name: p.n, spec: p.s || p.u, qty: cart[c] };
+    return { code: p.c, name: p.n, spec: p.s, unit: p.u, qty: cart[c] };
   });
   var btn = this;
   btn.disabled = true;
