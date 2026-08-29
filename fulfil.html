@@ -88,6 +88,16 @@
     border-radius:12px; font-size:14px; font-weight:800; cursor:pointer; margin-top:12px;
   }
   .fulfil-submit-btn:disabled{background:#c9c2b5;}
+  .history-card{
+    background:white; border:1.5px solid var(--line-border); border-radius:12px;
+    padding:12px 14px; margin-bottom:8px;
+  }
+  .history-card .hc-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+  .history-card .hc-id{font-size:12.5px; font-weight:800; color:var(--teal-dark);}
+  .history-card .hc-meta{font-size:11px; color:var(--ink-soft);}
+  .history-card .hc-store{font-size:10.5px; font-weight:800; background:var(--gold-light); color:#7a5b13; padding:2px 8px; border-radius:999px;}
+  .history-card .hc-items{font-size:12.5px; color:var(--ink); line-height:1.7; margin-top:6px;}
+  .history-card .hc-items .short{color:#c0503d; font-weight:700;}
 </style>
 </head>
 <body>
@@ -118,6 +128,9 @@
 
 <div id="main-content" class="wrap" style="display:none;">
   <div class="status-badge">👤 <span id="user-name-display"></span>　<span id="user-role-display"></span></div>
+
+  <button id="history-toggle-btn" style="margin-top:10px; width:100%; padding:10px; border-radius:10px; border:1px solid var(--line-border); background:white; color:var(--teal-dark); font-weight:700; font-size:13px; cursor:pointer;">📋 查看最近已出貨紀錄</button>
+  <div id="history-panel" style="display:none; margin-top:8px;"></div>
 
   <div class="section-label" style="display:flex; justify-content:space-between; align-items:center;">
     <span>待備貨清單</span>
@@ -221,6 +234,43 @@ function loadPendingOrders(){
     list.innerHTML = orders.map(renderOrderCard).join('');
   }, function(err){
     list.innerHTML = '<div class="placeholder-card">載入失敗，請點「重新整理」再試一次</div>';
+  });
+}
+
+document.getElementById('history-toggle-btn').addEventListener('click', function(){
+  var panel = document.getElementById('history-panel');
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    loadFulfilHistory();
+  } else {
+    panel.style.display = 'none';
+  }
+});
+
+function loadFulfilHistory(){
+  var panel = document.getElementById('history-panel');
+  panel.innerHTML = '<div class="placeholder-card">載入中...</div>';
+  apiGet('getOrdersByStatus', { status: '已出貨', limit: 10 }, function(orders){
+    if (!orders || orders.length === 0) {
+      panel.innerHTML = '<div class="placeholder-card">目前沒有已出貨的紀錄</div>';
+      return;
+    }
+    panel.innerHTML = orders.map(function(o){
+      var itemsHtml = o.items.map(function(it){
+        var shortFlag = '';
+        if (it.shipped !== '' && it.shipped !== null && Number(it.shipped) < Number(it.qty)) {
+          shortFlag = ' <span class="short">（缺' + (it.qty - it.shipped) + '）</span>';
+        }
+        return it.name + ' x' + it.shipped + shortFlag + '　[' + (it.warehouse || '-') + ']';
+      }).join('<br>');
+      return '<div class="history-card">' +
+        '<div class="hc-head"><span class="hc-id">' + o.orderId + '</span><span class="hc-store">' + o.store + '</span></div>' +
+        '<div class="hc-meta">叫貨人：' + o.orderer + '　備貨人：' + o.deliverer + '</div>' +
+        '<div class="hc-items">' + itemsHtml + '</div>' +
+        '</div>';
+    }).join('');
+  }, function(err){
+    panel.innerHTML = '<div class="placeholder-card">載入失敗，請再試一次</div>';
   });
 }
 
