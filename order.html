@@ -48,6 +48,47 @@
     margin-top:20px; background:white; border:1.5px dashed var(--line-border);
     border-radius:14px; padding:24px; text-align:center; color:var(--ink-soft); font-size:13.5px; line-height:1.7;
   }
+  .search-bar{
+    margin-top:10px; background:white; border:1.5px solid var(--line-border); border-radius:12px;
+    padding:10px 14px; font-size:14px; display:flex; align-items:center; gap:8px;
+  }
+  .search-bar input{border:none; outline:none; flex:1; font-size:14px; background:transparent; padding:0;}
+  .cat-row{display:flex; gap:8px; padding:10px 0 2px; overflow-x:auto;}
+  .cat-pill{
+    white-space:nowrap; padding:6px 14px; border-radius:999px; background:white;
+    border:1px solid var(--line-border); font-size:12.5px; color:var(--ink-soft); font-weight:600; cursor:pointer;
+  }
+  .cat-pill.sel{background:var(--gold-light); border-color:var(--gold); color:#7a5b13;}
+  .item-card{
+    margin:8px 0; background:white; border:1.5px solid var(--line-border); border-radius:14px;
+    padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px;
+  }
+  .item-card.selected{border-color:var(--teal); background:var(--teal-light);}
+  .item-info .name{font-size:14.5px; font-weight:700;}
+  .item-info .spec{font-size:12px; color:var(--ink-soft); margin-top:2px;}
+  .add-btn{
+    width:30px; height:30px; border-radius:8px; border:1.5px solid var(--teal); color:var(--teal);
+    background:white; font-size:16px; font-weight:800; cursor:pointer; flex-shrink:0;
+  }
+  .qtybox-wrap{display:flex; align-items:center; gap:6px; flex-shrink:0;}
+  .qty-box{
+    min-width:44px; text-align:center; padding:7px 10px; border-radius:10px; background:var(--teal);
+    color:white; font-weight:800; font-size:14.5px; cursor:pointer;
+  }
+  .qty-input{
+    width:60px; text-align:center; padding:6px 4px; border-radius:10px; border:1.5px solid var(--gold);
+    font-weight:800; font-size:15px; background:var(--gold-light);
+  }
+  .remove-btn{width:24px; height:24px; border-radius:50%; border:none; background:transparent; color:var(--ink-soft); font-size:15px; cursor:pointer;}
+  .footer-bar{
+    position:fixed; bottom:0; left:0; right:0; background:white; border-top:1px solid var(--line-border);
+    padding:12px 18px calc(12px + env(safe-area-inset-bottom)); display:flex; align-items:center;
+    justify-content:space-between; gap:12px;
+  }
+  .footer-bar .cart-info .n{font-weight:800; color:var(--teal-dark); font-size:15px;}
+  .footer-bar .cart-info .l{font-size:11px; color:var(--ink-soft);}
+  .footer-bar .primary-btn{width:auto; margin-top:0; max-width:220px; flex:1;}
+  .empty-hint{padding:24px; text-align:center; color:var(--ink-soft); font-size:13px;}
 </style>
 </head>
 <body>
@@ -76,13 +117,29 @@
   <button class="primary-btn" id="bind-submit-btn">完成設定</button>
 </div>
 
-<div id="main-content" class="wrap" style="display:none;">
+<div id="main-content" class="wrap" style="display:none; padding-bottom:90px;">
   <div class="status-badge">👤 <span id="user-name-display"></span>　<span id="user-role-display"></span></div>
 
-  <div class="placeholder-card">
-    ✅ 身份確認成功！<br><br>
-    「門市叫貨」的品項選單與送出功能<br>正在建置中，下一階段就會上線。
+  <div class="section-label">叫貨門市（每次叫貨都要選）</div>
+  <div class="chip-row" id="store-row">
+    <div class="chip sel" data-store="正氣店">正氣店</div>
+    <div class="chip" data-store="鐵花館">鐵花館</div>
   </div>
+
+  <div class="search-bar">🔍 <input type="text" id="search-input" placeholder="搜尋品項名稱或編碼"></div>
+  <div class="cat-row" id="cat-row"></div>
+
+  <div class="section-label" style="padding-top:6px;">品項（點數字可直接輸入數量）</div>
+  <div id="product-list"></div>
+  <div id="empty-hint" class="empty-hint" style="display:none;">找不到符合的品項，換個關鍵字試試</div>
+</div>
+
+<div id="cart-footer" class="footer-bar" style="display:none;">
+  <div class="cart-info">
+    <div class="n" id="cart-count">0 項</div>
+    <div class="l">已選擇的叫貨項目</div>
+  </div>
+  <button class="primary-btn" id="submit-order-btn" disabled>送出叫貨</button>
 </div>
 
 <script>
@@ -93,6 +150,180 @@ var API_URL = 'https://script.google.com/macros/s/AKfycbweSeRSSxbxgqznlzuBibbC6t
 
 var currentUserId = null;
 var selectedRole = '門市';
+var selectedStore = '正氣店';
+var cart = {}; // code -> qty
+var searchKeyword = '';
+var selectedCat = '全部';
+
+// ====== 品項清單（來自 ECOUNT 匯出，只含成品類）======
+var PRODUCTS = [
+{c:'00000006',n:'迎賓禮琪瑪酥30g蔥蒜',s:'30g',u:'包',g:'琪瑪酥'},
+{c:'00000007',n:'迎賓禮琪瑪酥30g黑糖',s:'30g',u:'包',g:'琪瑪酥'},
+{c:'00000022',n:'迎賓禮琪瑪酥30g原味',s:'30G',u:'包',g:'琪瑪酥'},
+{c:'00000023',n:'迎賓禮琪瑪酥30g焦糖牛奶',s:'30g',u:'包',g:'琪瑪酥'},
+{c:'00000060',n:'迎賓禮琪瑪酥-紅烏龍口味',s:'30g',u:'包',g:'琪瑪酥'},
+{c:'00100304',n:'土鳳梨酥(盒裝)',s:'150g',u:'盒',g:'其他'},
+{c:'00100304-1',n:'土鳳梨酥(盒裝)[台東博覽會版]',s:'150g',u:'盒',g:'其他'},
+{c:'00100403',n:'剝皮辣椒-原味',s:'450g',u:'罐',g:'辣椒罐頭'},
+{c:'00100502',n:'朝天椒辣椒醬',s:'450g',u:'罐',g:'辣椒罐頭'},
+{c:'00100601',n:'琪瑪酥-原味',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00100809',n:'琪瑪酥-黑糖',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00100908',n:'琪瑪酥-海苔',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00101004',n:'琪瑪酥-起士',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00101103',n:'琪瑪酥-蔥蒜',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00101301',n:'剝皮辣椒-甘梅',s:'450g',u:'罐',g:'辣椒罐頭'},
+{c:'00101400',n:'琪瑪酥-紅烏龍',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00102001',n:'琪瑪酥-芥末',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00102002',n:'琪瑪酥-焦糖牛奶口味',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00102409',n:'紅藜牛奶餅X紅藜先生',s:'6入',u:'盒',g:'其他'},
+{c:'00102704',n:'朝天椒-榨菜',s:'450g',u:'罐',g:'其他'},
+{c:'00103701',n:'鹹蛋黃牛軋餅',s:'210g',u:'包',g:'其他'},
+{c:'00104401',n:'米穀酥椒鹽(新包裝)',s:'160g',u:'包',g:'其他'},
+{c:'00104609',n:'琪瑪酥100g-海苔',s:'100g',u:'包',g:'琪瑪酥'},
+{c:'00104708',n:'琪瑪酥100g-黑糖',s:'100g',u:'包',g:'琪瑪酥'},
+{c:'00104807',n:'琪瑪酥100g-蔥蒜',s:'100g',u:'包',g:'琪瑪酥'},
+{c:'00104918',n:'(通路版)琪瑪酥200g焦糖牛奶',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00104919',n:'(通路版)琪瑪酥200g起士',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00104920',n:'(通路版)琪瑪酥200g黑糖',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00104921',n:'(通路版)琪瑪酥200g蔥蒜',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00104923',n:'(通路版)琪瑪酥200g原味',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00104926',n:'(通路版)琪瑪酥200g芥末口味',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00104927',n:'(通路版)琪瑪酥200g紅烏龍口味',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'001050043',n:'燒蝦餅禮盒(鹹蛋黃口味)',s:'150g',u:'盒',g:'禮盒'},
+{c:'001050043-2',n:'燒蝦餅100g(鹹蛋黃口味)',s:'100g',u:'包',g:'其他'},
+{c:'001050043-3',n:'燒蝦餅100g(辣吼台式口味)',s:'100g',u:'包',g:'其他'},
+{c:'001050043-4',n:'燒蝦餅100g(ㄤ妞洋蔥口味)',s:'100g',u:'包',g:'其他'},
+{c:'001050043-5',n:'燒蝦餅100g(港式鮮味口味)',s:'100g',u:'包',g:'其他'},
+{c:'001050043-6',n:'燒蝦餅100g(串烤醬味口味)',s:'100g',u:'包',g:'其他'},
+{c:'00105104',n:'米穀酥焦糖(新包裝)',s:'160g',u:'包',g:'其他'},
+{c:'00106402-1',n:'香酥脆手提禮盒A',s:'琪瑪酥黑糖*1包+琪瑪酥蔥蒜*1包+琪瑪酥原味*1包',u:'盒',g:'禮盒'},
+{c:'00106402-2',n:'香酥脆手提禮盒B',s:'琪瑪酥黑糖*1包+燒蝦餅ㄤ妞洋蔥*1包+鬼頭刀天婦羅*1包',u:'盒',g:'禮盒'},
+{c:'00106402-3',n:'香酥脆手提禮盒C',s:'鬼頭刀天婦羅*2包+旗魚天婦羅*1包',u:'盒',g:'禮盒'},
+{c:'00106407',n:'沃虎中秋精裝禮盒-紀念珍藏版',s:'醬心花生*3入+醬心芝麻*3入+琪瑪酥黑糖*5入+鹹蛋黃牛軋餅*6入+肉鬆餅*2入+醬心起酥片*5入',u:'件',g:'禮盒'},
+{c:'00106408',n:'青澤鴻兔大展立體瓷器禮盒',s:'紅烏龍土鳳梨酥*2入+醬心花生*4入+琪瑪酥黑糖*5入+千金酥鹹蛋黃*5入',u:'件',g:'禮盒'},
+{c:'00106422',n:'青澤漫步輕雲手提禮盒',s:'花生*6+芝麻*6+肉鬆*6',u:'盒',g:'禮盒'},
+{c:'00106422-1',n:'青澤漫步輕雲手提禮盒B款',s:'花生*6+芝麻*6+巧克力*6',u:'盒',g:'禮盒'},
+{c:'00106422-2',n:'青澤漫步輕雲手提禮盒C款',s:'花生*6+芝麻*6+鮮奶*6',u:'盒',g:'禮盒'},
+{c:'00106422-3',n:'青澤漫步輕雲手提禮盒D款',s:'花生*6+芝麻*6+鹹蛋黃*6',u:'盒',g:'禮盒'},
+{c:'00106423',n:'秋月宴禮',s:'290g',u:'盒',g:'其他'},
+{c:'00106428',n:'月舞仙姬禮盒',s:'鮮奶蛋捲*6入+芋頭流芯酥*3入+嫦娥造型牛奶餅*6入',u:'盒',g:'禮盒'},
+{c:'00106428-1',n:'月舞仙姬禮盒B',s:'芋香蛋黃酥*3入+鮮奶蛋捲*6入+嫦娥造型牛奶餅*6入',u:'盒',g:'禮盒'},
+{c:'00106428-2',n:'月舞仙姬禮盒C',s:'芋香Q餅*1入+芋頭流芯酥*1入+肉鬆餅*1入+醬心蛋捲芝麻*6入+嫦娥造型牛奶餅*6入',u:'盒',g:'禮盒'},
+{c:'00106429',n:'月兔同慶A',s:'芋香蛋黃酥*6入',u:'盒',g:'其他'},
+{c:'00106429-1',n:'月兔同慶B',s:'芋香蛋黃酥*3入+芋香Q餅*3入',u:'盒',g:'其他'},
+{c:'00106429-2',n:'月兔同慶C',s:'芋香蛋黃酥*2入+芋香Q餅*2入+芋香肉鬆蛋黃酥*2入',u:'盒',g:'其他'},
+{c:'00106430',n:'桂花夢舞禮盒',s:'鮮奶蛋捲*6入+肉鬆餅*2入+醬心起酥片*5入',u:'盒',g:'禮盒'},
+{c:'00106430-2',n:'桂花夢舞禮盒C',s:'醬心蛋捲花生*6入+嫦娥造型牛奶餅*6入+醬心起酥片*6入',u:'盒',g:'禮盒'},
+{c:'00106430-3',n:'桂花夢舞禮盒D(月兔團圓)',s:'醬心蛋捲花生*6入+嫦娥造型牛奶餅*6入+熱氣球珍珠奶茶酥*2入',u:'盒',g:'禮盒'},
+{c:'00106431',n:'皓月千禮A',s:'醬心蛋捲-花生*6入+芝麻*6入+肉鬆*6入',u:'盒',g:'其他'},
+{c:'00106431-1',n:'皓月千禮B',s:'鮮奶蛋捲*18入',u:'盒',g:'其他'},
+{c:'00106432',n:'兔影繞月禮盒',s:'鮮奶蛋捲*6入+千金酥鹹蛋黃*5入+蔓越莓洛神雪花餅小盒裝*2盒',u:'盒',g:'禮盒'},
+{c:'00106433',n:'金艷紫龍瓷器禮盒',s:'琪瑪酥黑糖*3入+鮮奶蛋捲*4入+千金酥紅烏龍*3入+肉鬆餅*2入+嫦娥造型牛奶餅*6入',u:'件',g:'禮盒'},
+{c:'00106434',n:'鮮奶蛋捲禮盒(20入)',s:'鮮奶蛋捲*20入',u:'盒',g:'禮盒'},
+{c:'00106435',n:'祥蛇春臨A',s:'醬心蛋捲-花生*2入+芝麻*2入+肉鬆*2入，元，寶(大片)牛奶餅*6入，發財鳳梨酥*1入，日進斗金珍珠奶茶酥*2入',u:'盒',g:'其他'},
+{c:'00106435-1',n:'祥蛇春臨B',s:'芋頭流芯奶皇酥*3入+醬心蛋捲-花生*2入+醬心蛋捲-芝麻*2入+醬心蛋捲-肉鬆*2入+元寶(大片)造型牛奶餅*6',u:'盒',g:'其他'},
+{c:'00106435-2',n:'祥蛇春臨C',s:'蔓越莓雪Q餅*3盒+鮮奶蛋捲*6入+元寶(大片)造型牛奶餅*6入 蔓越莓雪Q餅33G/盒',u:'盒',g:'其他'},
+{c:'00106436',n:'喜艷錦蛇A',s:'法式餅乾-醇濃花生*4入+蔓越莓雪Q餅*2盒+醬心蛋捲花生*3入+醬心蛋捲芝麻*3入',u:'盒',g:'其他'},
+{c:'00106436-1',n:'喜艷錦蛇B',s:'紅烏龍土鳳梨酥*2入+鮮奶蛋捲*6入+元寶(大片)造型牛奶餅*3入',u:'盒',g:'其他'},
+{c:'00106436-2',n:'喜艷錦蛇C',s:'鳳梨酥*2入+鮮奶蛋捲*6入+元寶(大片)造型牛奶餅*3入',u:'盒',g:'其他'},
+{c:'00106436-3',n:'喜艷錦蛇D',s:'紅烏龍土鳳梨酥*2入+醬心蛋捲鹹蛋黃*6入+元寶(大片)造型牛奶餅*3入',u:'盒',g:'其他'},
+{c:'00106440',n:'攀雲追月A',s:'金沙酥*3入+鮮奶蛋捲*6入+嫦娥牛奶餅*6入',u:'盒',g:'其他'},
+{c:'00106440-1',n:'攀雲追月B',s:'芋頭流芯酥*3入+醬心蛋捲花生*3入+醬心蛋捲芝麻*3入+嫦娥牛奶餅*6入',u:'盒',g:'其他'},
+{c:'00106440-2',n:'攀雲追月C',s:'蛋黃酥*3入+鮮奶蛋捲*6入+嫦娥牛奶餅*6入',u:'盒',g:'其他'},
+{c:'00106440-3',n:'攀雲追月D',s:'金沙酥*3入+鮮奶蛋捲*6入+嫦娥牛奶餅*2入+蔓越莓洛神雪花餅*2盒',u:'盒',g:'其他'},
+{c:'00106441',n:'月光圓舞A',s:'千金酥鹹蛋黃*8入+醬心蛋捲花生*3入+醬心蛋捲芝麻*3入+蔓越莓洛神雪花餅*6入',u:'盒',g:'其他'},
+{c:'00106441-1',n:'月光圓舞B',s:'肉鬆餅*2入+鮮奶蛋捲*6入+法式餅乾花生(單片包裝)*3入',u:'盒',g:'其他'},
+{c:'00106441-2',n:'月光圓舞C',s:'費南雪原味*2+嫦娥牛奶餅*6入+醬心蛋捲芝麻*3+醬心蛋捲布丁*3',u:'',g:'其他'},
+{c:'00106442',n:'富貴豐年A',s:'花盒1:脆捲梅子口味40g*1+花盒2:蔓越莓洛神雪花餅*6入+醬心蛋捲花生*2入/芝麻*2入/肉鬆*2入+費南雪原味*5入',u:'盒',g:'其他'},
+{c:'00106442-1',n:'富貴豐年B',s:'鳳梨酥(方)*3入+醬心蛋捲花生*2入/芝麻*2入/布丁*2入+蝴蝶酥*6入',u:'盒',g:'其他'},
+{c:'00106442-2',n:'富貴豐年C',s:'花盒1:脆捲梅子口味40g*1+花盒2:蔓越莓洛神雪花餅*6入+鳳梨酥(方)*3入+牛奶餅(元寶)*6入',u:'盒',g:'其他'},
+{c:'00106442-4',n:'富貴豐年(客製款)',s:'',u:'盒',g:'其他'},
+{c:'00106443',n:'金福饗宴A',s:'醬心蛋捲花生*4入/芝麻*4入+醬心起酥片*8入',u:'盒',g:'其他'},
+{c:'00106443-1',n:'金福饗宴B',s:'醬心蛋捲-花生*4入+芝麻*4入+肉鬆*4入+布丁*4入',u:'盒',g:'其他'},
+{c:'00106443-2',n:'金福饗宴C',s:'醬心起酥片*9入+醬心蛋捲-肉鬆*4入+布丁*5入',u:'盒',g:'其他'},
+{c:'00106445',n:'霓賞月圓A',s:'芋頭流芯奶皇酥55g*3入+醬心蛋捲花生口味25g*3入/芝麻口味25g*3入+蝴蝶酥9g*6入',u:'盒',g:'其他'},
+{c:'00106445-1',n:'霓賞月圓B',s:'芋頭流芯奶皇酥55g*3入+醬心蛋捲-花生口味25g*3入/芝麻口味25g*3入+醬心起酥片20g*6入',u:'盒',g:'其他'},
+{c:'00106445-2',n:'霓賞月圓C',s:'芋頭流芯奶皇酥55g*3入+鮮奶蛋捲12g*6入+千金酥鹹蛋黃10g*6入',u:'盒',g:'其他'},
+{c:'00106445-3',n:'霓賞月圓D',s:'肉鬆餅30g*3入+鮮奶蛋捲12g*6入+蝴蝶酥9g*6入',u:'盒',g:'其他'},
+{c:'00106446',n:'映月臻禮A',s:'蔓越洛神雪花餅30g*3盒+醬心蛋捲-花生口味25g*3入/芝麻口味25g*3入+蝴蝶酥9g*6入',u:'盒',g:'其他'},
+{c:'00106446-1',n:'映月臻禮B',s:'芋頭流芯奶皇酥55g*3入+鮮奶蛋捲12g*6入+造型牛奶餅10g*6入',u:'盒',g:'其他'},
+{c:'00106446-2',n:'映月臻禮C',s:'肉鬆餅30g*3+醬心蛋捲-花生口味25g*3入/芝麻口味25g*3入+醬心起酥片20g*6入',u:'盒',g:'其他'},
+{c:'00106738',n:'(通路版)琪瑪酥200g海苔',s:'200g',u:'包',g:'琪瑪酥'},
+{c:'00106999',n:'青澤限量版-台灣味禮盒',s:'鳳梨酥*2入+鮮奶蛋捲*6入+造型牛奶餅*3入(227g/盒)',u:'盒',g:'禮盒'},
+{c:'00107066',n:'鬼頭刀天婦羅-椒鹽口味',s:'150g',u:'包',g:'其他'},
+{c:'00107067',n:'旗魚天婦羅',s:'150g',u:'包',g:'其他'},
+{c:'00109277',n:'醬心蛋捲(8入)-黑鮪魚鬆口味',s:'160g/8支',u:'盒',g:'醬心蛋捲'},
+{c:'00109278',n:'醬心蛋捲(8入)-鬼頭刀魚鬆口味',s:'160g/8支',u:'盒',g:'醬心蛋捲'},
+{c:'00109279',n:'醬心蛋捲(8入)-旗魚鬆口味',s:'160g/8支',u:'盒',g:'醬心蛋捲'},
+{c:'00109283',n:'醬心蛋捲-花生口味',s:'200g/8入',u:'盒',g:'醬心蛋捲'},
+{c:'00109392',n:'醬心蛋捲-芝麻口味',s:'200g/8入',u:'盒',g:'醬心蛋捲'},
+{c:'00109401',n:'醬心蛋捲-鹹蛋黃口味',s:'200g/8入',u:'盒',g:'醬心蛋捲'},
+{c:'00109510',n:'醬心蛋捲-巧克力口味',s:'200g/8入',u:'盒',g:'醬心蛋捲'},
+{c:'00109520',n:'醬心蛋捲-布丁口味',s:'200g/8入',u:'盒',g:'醬心蛋捲'},
+{c:'00109629',n:'醬心蛋捲-肉鬆口味',s:'144g/8入',u:'盒',g:'醬心蛋捲'},
+{c:'00109638',n:'醬心蛋捲-小米酒釀口味',s:'200g/8入',u:'盒',g:'醬心蛋捲'},
+{c:'00109640',n:'醬心蛋捲-釋迦口味',s:'25g*8入',u:'盒',g:'醬心蛋捲'},
+{c:'00109738-2',n:'醬心起酥片12入禮盒',s:'12入',u:'盒',g:'禮盒'},
+{c:'00109750-2',n:'熱氣球造型牛奶餅禮盒三版',s:'18入',u:'盒',g:'禮盒'},
+{c:'00109756',n:'漫遊山境熱氣球造型牛奶餅禮盒',s:'18入',u:'盒',g:'禮盒'},
+{c:'00109757',n:'漫遊山境熱氣球造型珍珠奶茶酥禮盒',s:'9入',u:'盒',g:'禮盒'},
+{c:'00109758',n:'漫遊山境熱氣球造型紅烏龍土鳳梨酥禮盒',s:'9入',u:'盒',g:'禮盒'},
+{c:'00109759',n:'漫遊山境熱氣球造型蔓越莓酥禮盒',s:'9入',u:'盒',g:'禮盒'},
+{c:'00109760',n:'漫遊山境熱氣球造型鳳梨酥禮盒',s:'9入',u:'盒',g:'禮盒'},
+{c:'00110013',n:'維納費南雪-原味(單個包裝)',s:'30G',u:'個',g:'餅乾類'},
+{c:'00110013-1',n:'維納費南雪-可可口味(單個包裝)',s:'30G',u:'個',g:'餅乾類'},
+{c:'00110013-2',n:'維納費南雪-抹茶紅豆口味(單個包裝)',s:'30G',u:'個',g:'餅乾類'},
+{c:'00110023',n:'小金酥-可可口味',s:'200G',u:'包',g:'餅乾類'},
+{c:'00110024',n:'小金酥-椒鹽口味',s:'200G',u:'包',g:'餅乾類'},
+{c:'00110025',n:'小金酥-黑芝麻口味',s:'200G',u:'包',g:'餅乾類'},
+{c:'00110026',n:'小金酥-黑糖口味',s:'200G',u:'包',g:'餅乾類'},
+{c:'00110027',n:'小金酥-椰香口味',s:'200G',u:'包',g:'餅乾類'},
+{c:'00110030',n:'法式餅乾-香蔥辣味',s:'70g',u:'包',g:'餅乾類'},
+{c:'00110030-1',n:'法式餅乾-經典奶酥',s:'184g',u:'包',g:'餅乾類'},
+{c:'00110030-2',n:'法式餅乾-濃情巧克力',s:'184g',u:'包',g:'餅乾類'},
+{c:'00110030-3',n:'法式餅乾-醇濃花生',s:'180g',u:'包',g:'餅乾類'},
+{c:'00110031',n:'青澤牛奶餅乾',s:'20入',u:'盒',g:'其他'},
+{c:'00110032',n:'波士頓蛋糕脆餅-可可巧克力風味',s:'150g',u:'包',g:'其他'},
+{c:'00110033',n:'脆脆捲捲-焦糖牛奶',s:'240g',u:'包',g:'餅乾類'},
+{c:'00110036',n:'脆脆捲捲-焦糖拿鐵',s:'240g',u:'包',g:'餅乾類'},
+{c:'00110037',n:'脆脆捲捲-梅子口味',s:'240g',u:'包',g:'餅乾類'},
+{c:'00110040',n:'蕎糧酥-燕麥堅果脆片餅乾(椒鹽)',s:'230g',u:'包',g:'餅乾類'},
+{c:'00110041',n:'蕎糧酥-燕麥堅果脆片餅乾(原味)',s:'230g',u:'包',g:'餅乾類'},
+{c:'00110042',n:'蕎糧酥-燕麥堅果脆片餅乾(可可)',s:'230g',u:'包',g:'餅乾類'},
+{c:'00110043',n:'蕎糧酥-燕麥堅果脆片餅乾(咖啡)',s:'230g',u:'包',g:'餅乾類'},
+{c:'00110054',n:'蔓越莓洛神雪花餅',s:'200g/包',u:'包',g:'其他'},
+{c:'00110056',n:'維納費南雪禮盒-原味',s:'10入',u:'盒',g:'禮盒'},
+{c:'00110057',n:'維納費南雪禮盒-綜合',s:'10入',u:'盒',g:'禮盒'},
+{c:'00110059',n:'肉鬆鹹蛋黃雪花餅',s:'165g',u:'包',g:'其他'},
+{c:'00110060',n:'蝴蝶酥12入禮盒',s:'12入',u:'盒',g:'禮盒'},
+{c:'00111001',n:'千金酥-鹹蛋黃口味',s:'150g(15g*10入)',u:'包',g:'千金酥'},
+{c:'00111002',n:'千金酥-紅烏龍茶口味',s:'150g(15g*10入)',u:'包',g:'千金酥'},
+{c:'00111003',n:'千金酥-花生口味',s:'150g(15g*10入)',u:'包',g:'千金酥'},
+{c:'00200103',n:'池上米麻糬-紅豆口味',s:'210g(35*6入)',u:'盒',g:'米麻糬'},
+{c:'00200202',n:'池上米麻糬-花生口味',s:'210g(35*6入)',u:'盒',g:'米麻糬'},
+{c:'00200301',n:'池上米麻糬-芝麻口味',s:'210g(35*6入)',u:'盒',g:'米麻糬'},
+{c:'00109751',n:'熱氣球造型珍珠奶茶酥禮盒',s:'9入',u:'盒',g:'禮盒'},
+{c:'00109751-1',n:'熱氣球造型珍珠奶茶酥禮盒(5入)',s:'5入',u:'盒',g:'禮盒'},
+{c:'00109752',n:'熱氣球造型紅烏龍土鳳梨酥禮盒',s:'9入',u:'盒',g:'禮盒'},
+{c:'00109752-1',n:'熱氣球造型紅烏龍土鳳梨酥禮盒(5入)',s:'5入',u:'盒',g:'禮盒'},
+{c:'00109753',n:'熱氣球造型蔓越莓酥禮盒',s:'9入',u:'盒',g:'禮盒'},
+{c:'00109753-1',n:'熱氣球造型蔓越莓酥禮盒(5入)',s:'5入',u:'盒',g:'禮盒'},
+{c:'00109754',n:'熱氣球造型鳳梨酥禮盒',s:'9入',u:'盒',g:'禮盒'},
+{c:'00109754-1',n:'熱氣球造型鳳梨酥禮盒(5入)',s:'5入',u:'盒',g:'禮盒'},
+{c:'99110008',n:'青澤-品牌紅袋',s:'25.64g/只(1KG/39只,25KG/袋)',u:'只',g:'其他'},
+{c:'99110009',n:'青澤-品牌白袋(大)',s:'1只',u:'只',g:'其他'},
+{c:'00105002',n:'青澤提袋-中',s:'27*30*13',u:'只',g:'包材'},
+{c:'00105002-1',n:'青澤提袋-小',s:'30.5*21*9',u:'只',g:'包材'},
+{c:'00105003',n:'青澤提袋-大',s:'47.8*43*17',u:'只',g:'包材'},
+{c:'60080001',n:'老陳記-地瓜酥原味',s:'240g/20包/箱',u:'包',g:'其他'},
+{c:'60080002',n:'老陳記-地瓜酥青梅',s:'240g/20包/箱',u:'包',g:'其他'},
+{c:'60080003',n:'老陳記-地瓜酥無添加糖',s:'240g/20包/箱',u:'包',g:'其他'},
+{c:'00110058',n:'招財貓鳳梨酥禮盒',s:'30g*6入',u:'盒',g:'禮盒'},
+{c:'00110062',n:'芒果鳳梨雪花餅',s:'11g*15入',u:'包',g:'其他'},
+{c:'001050041',n:'火燒蝦原味',s:'80g',u:'包',g:'其他'},
+{c:'001050042',n:'火燒蝦海苔',s:'80g',u:'包',g:'其他'}
+];
+var CATS = ['全部'].concat(Array.from(new Set(PRODUCTS.map(function(p){return p.g;}))).sort());
 
 // 呼叫 GAS 的 JSON API（GET，用於讀取）
 function apiGet(action, params, onSuccess, onError, retriesLeft){
@@ -161,7 +392,143 @@ function showMainContent(name, role){
   document.getElementById('user-name-display').textContent = name;
   document.getElementById('user-role-display').textContent = '（' + role + '人員）';
   document.getElementById('main-content').style.display = 'block';
+  document.getElementById('cart-footer').style.display = 'flex';
+  window.currentUserName = name;
+  renderCats();
+  renderProductList();
+  bindStoreRow();
 }
+
+function renderCats(){
+  var el = document.getElementById('cat-row');
+  el.innerHTML = CATS.map(function(c){
+    return '<div class="cat-pill' + (c===selectedCat ? ' sel' : '') + '" data-cat="' + c + '">' + c + '</div>';
+  }).join('');
+  el.querySelectorAll('.cat-pill').forEach(function(pill){
+    pill.addEventListener('click', function(){
+      selectedCat = pill.dataset.cat;
+      renderCats();
+      renderProductList();
+    });
+  });
+}
+
+function bindStoreRow(){
+  document.getElementById('store-row').addEventListener('click', function(e){
+    var chip = e.target.closest('.chip');
+    if (!chip) return;
+    document.querySelectorAll('#store-row .chip').forEach(function(c){ c.classList.remove('sel'); });
+    chip.classList.add('sel');
+    selectedStore = chip.dataset.store;
+  });
+  document.getElementById('search-input').addEventListener('input', function(e){
+    searchKeyword = e.target.value.trim().toLowerCase();
+    renderProductList();
+  });
+}
+
+function filteredProducts(){
+  return PRODUCTS.filter(function(p){
+    if (selectedCat !== '全部' && p.g !== selectedCat) return false;
+    if (searchKeyword && p.n.toLowerCase().indexOf(searchKeyword) === -1 && p.c.toLowerCase().indexOf(searchKeyword) === -1) return false;
+    return true;
+  });
+}
+
+function qtyBoxHtml(code, qty){
+  if (qty > 0) {
+    return '<div class="qtybox-wrap">' +
+      '<div class="qty-box" id="qbox-' + code + '" onclick="openQtyInput(\'' + code + '\')">' + qty + '</div>' +
+      '<button class="remove-btn" onclick="removeItem(\'' + code + '\')">×</button>' +
+      '</div>';
+  }
+  return '<button class="add-btn" onclick="addItem(\'' + code + '\')">＋</button>';
+}
+
+function renderProductList(){
+  var list = filteredProducts();
+  var el = document.getElementById('product-list');
+  var emptyHint = document.getElementById('empty-hint');
+  if (list.length === 0) {
+    el.innerHTML = '';
+    emptyHint.style.display = 'block';
+    return;
+  }
+  emptyHint.style.display = 'none';
+  el.innerHTML = list.slice(0, 60).map(function(p){
+    var qty = cart[p.c] || 0;
+    return '<div class="item-card' + (qty>0?' selected':'') + '">' +
+      '<div class="item-info"><div class="name">' + p.n + '</div>' +
+      '<div class="spec">' + (p.s || p.u) + '　' + p.c + '</div></div>' +
+      qtyBoxHtml(p.c, qty) +
+      '</div>';
+  }).join('');
+}
+
+function addItem(code){
+  cart[code] = (cart[code]||0) + 1;
+  renderProductList();
+  updateCartFooter();
+}
+function removeItem(code){
+  delete cart[code];
+  renderProductList();
+  updateCartFooter();
+}
+function openQtyInput(code){
+  var box = document.getElementById('qbox-' + code);
+  if (!box) return;
+  var current = box.textContent.trim();
+  box.outerHTML = '<input type="number" inputmode="numeric" pattern="[0-9]*" class="qty-input" id="qbox-' + code + '" value="' + current + '" onblur="commitQtyInput(\'' + code + '\')" onkeydown="if(event.key===\'Enter\'){this.blur();}">';
+  var input = document.getElementById('qbox-' + code);
+  input.focus();
+  input.select();
+}
+function commitQtyInput(code){
+  var input = document.getElementById('qbox-' + code);
+  if (!input) return;
+  var val = parseInt(input.value, 10);
+  if (isNaN(val) || val < 0) val = 0;
+  if (val === 0) { delete cart[code]; } else { cart[code] = val; }
+  renderProductList();
+  updateCartFooter();
+}
+
+function updateCartFooter(){
+  var n = Object.keys(cart).length;
+  document.getElementById('cart-count').textContent = n + ' 項';
+  document.getElementById('submit-order-btn').disabled = n === 0;
+}
+
+document.getElementById('submit-order-btn').addEventListener('click', function(){
+  var codes = Object.keys(cart);
+  if (codes.length === 0) return;
+  var items = codes.map(function(c){
+    var p = PRODUCTS.find(function(x){ return x.c === c; });
+    return { code: p.c, name: p.n, spec: p.s || p.u, qty: cart[c] };
+  });
+  var btn = this;
+  btn.disabled = true;
+  btn.textContent = '送出中...';
+  apiPost('submitOrder', {
+    userId: currentUserId,
+    name: window.currentUserName,
+    store: selectedStore,
+    items: JSON.stringify(items)
+  }, function(result){
+    document.getElementById('main-content').innerHTML =
+      '<div class="placeholder-card" style="border-style:solid; border-color:var(--teal);">' +
+      '✅ 叫貨已送出！<br><br>單號：' + result.orderId + '<br>' +
+      '門市：' + selectedStore + '<br>共 ' + items.length + ' 項品項<br><br>' +
+      '倉庫/工廠已收到通知，備貨完成後會通知您到貨時間。' +
+      '</div>';
+    document.getElementById('cart-footer').style.display = 'none';
+  }, function(err){
+    btn.disabled = false;
+    btn.textContent = '送出叫貨';
+    alert('送出失敗，請再試一次：' + err);
+  });
+});
 
 function init(){
   liff.init({ liffId: LIFF_ID }).then(function(){
