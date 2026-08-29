@@ -89,6 +89,23 @@
   .footer-bar .cart-info .l{font-size:11px; color:var(--ink-soft);}
   .footer-bar .primary-btn{width:auto; margin-top:0; max-width:220px; flex:1;}
   .empty-hint{padding:24px; text-align:center; color:var(--ink-soft); font-size:13px;}
+  .history-card{
+    background:white; border:1.5px solid var(--line-border); border-radius:12px;
+    padding:12px 14px; margin-bottom:8px;
+  }
+  .history-card .hc-head{
+    display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;
+  }
+  .history-card .hc-id{font-size:12.5px; font-weight:800; color:var(--teal-dark);}
+  .history-card .hc-meta{font-size:11px; color:var(--ink-soft);}
+  .history-card .hc-status{
+    font-size:10.5px; font-weight:800; padding:2px 8px; border-radius:999px;
+  }
+  .status-待備貨{background:var(--gold-light); color:#7a5b13;}
+  .status-已出貨{background:var(--teal-light); color:var(--teal-dark);}
+  .status-已完成{background:#e2f0e6; color:#3d6b4a;}
+  .history-card .hc-items{font-size:12.5px; color:var(--ink); line-height:1.7;}
+  .history-card .hc-items .short{color:#c0503d; font-weight:700;}
 </style>
 </head>
 <body>
@@ -125,6 +142,9 @@
     <div class="chip sel" data-store="正氣店">正氣店</div>
     <div class="chip" data-store="鐵花館">鐵花館</div>
   </div>
+
+  <button id="history-toggle-btn" style="margin-top:10px; width:100%; padding:10px; border-radius:10px; border:1px solid var(--line-border); background:white; color:var(--teal-dark); font-weight:700; font-size:13px; cursor:pointer;">📋 查看本門市最近叫貨紀錄</button>
+  <div id="history-panel" style="display:none; margin-top:8px;"></div>
 
   <div class="search-bar">🔍 <input type="text" id="search-input" placeholder="搜尋品項名稱或編碼"></div>
   <div class="cat-row" id="cat-row"></div>
@@ -420,10 +440,53 @@ function bindStoreRow(){
     document.querySelectorAll('#store-row .chip').forEach(function(c){ c.classList.remove('sel'); });
     chip.classList.add('sel');
     selectedStore = chip.dataset.store;
+    if (document.getElementById('history-panel').style.display !== 'none') {
+      loadHistory();
+    }
   });
   document.getElementById('search-input').addEventListener('input', function(e){
     searchKeyword = e.target.value.trim().toLowerCase();
     renderProductList();
+  });
+  document.getElementById('history-toggle-btn').addEventListener('click', function(){
+    var panel = document.getElementById('history-panel');
+    if (panel.style.display === 'none') {
+      panel.style.display = 'block';
+      loadHistory();
+    } else {
+      panel.style.display = 'none';
+    }
+  });
+}
+
+function loadHistory(){
+  var panel = document.getElementById('history-panel');
+  panel.innerHTML = '<div class="empty-hint">載入中...</div>';
+  apiGet('getOrdersByStore', { store: selectedStore, limit: 5 }, function(orders){
+    if (!orders || orders.length === 0) {
+      panel.innerHTML = '<div class="empty-hint">' + selectedStore + ' 目前還沒有叫貨紀錄</div>';
+      return;
+    }
+    panel.innerHTML = orders.map(function(o){
+      var itemsHtml = o.items.map(function(it){
+        var shortFlag = '';
+        if (it.shipped !== '' && it.shipped !== null && Number(it.shipped) < Number(it.qty)) {
+          shortFlag = ' <span class="short">（出貨' + it.shipped + '，缺' + (it.qty - it.shipped) + '）</span>';
+        }
+        return it.name + ' x' + it.qty + shortFlag;
+      }).join('<br>');
+      var statusClass = 'status-' + o.status;
+      return '<div class="history-card">' +
+        '<div class="hc-head">' +
+        '<span class="hc-id">' + o.orderId + '</span>' +
+        '<span class="hc-status ' + statusClass + '">' + o.status + '</span>' +
+        '</div>' +
+        '<div class="hc-meta">' + o.time + '　叫貨人：' + o.orderer + '</div>' +
+        '<div class="hc-items" style="margin-top:6px;">' + itemsHtml + '</div>' +
+        '</div>';
+    }).join('');
+  }, function(err){
+    panel.innerHTML = '<div class="empty-hint">載入失敗，請再試一次</div>';
   });
 }
 
@@ -516,11 +579,16 @@ document.getElementById('submit-order-btn').addEventListener('click', function()
     store: selectedStore,
     items: JSON.stringify(items)
   }, function(result){
+    var itemsHtml = items.map(function(it){
+      return '<div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--line-border); font-size:13.5px;">' +
+        '<span>' + it.name + '</span><span style="font-weight:800; color:var(--teal-dark);">x ' + it.qty + '</span></div>';
+    }).join('');
     document.getElementById('main-content').innerHTML =
-      '<div class="placeholder-card" style="border-style:solid; border-color:var(--teal);">' +
-      '✅ 叫貨已送出！<br><br>單號：' + result.orderId + '<br>' +
-      '門市：' + selectedStore + '<br>共 ' + items.length + ' 項品項<br><br>' +
-      '倉庫/工廠已收到通知，備貨完成後會通知您到貨時間。' +
+      '<div class="placeholder-card" style="border-style:solid; border-color:var(--teal); text-align:left;">' +
+      '<div style="text-align:center; margin-bottom:10px;">✅ 叫貨已送出！</div>' +
+      '<div style="font-size:12.5px; color:var(--ink-soft); margin-bottom:10px;">單號：' + result.orderId + '　門市：' + selectedStore + '</div>' +
+      itemsHtml +
+      '<div style="text-align:center; margin-top:14px; font-size:12px; color:var(--ink-soft);">倉庫/工廠已收到通知，備貨完成後會通知您到貨時間。<br>可以到上方「查看本門市最近叫貨紀錄」隨時核對這筆內容。</div>' +
       '</div>';
     document.getElementById('cart-footer').style.display = 'none';
   }, function(err){
