@@ -383,7 +383,10 @@ function submitReceiveOrder(orderId){
     items: JSON.stringify(items)
   }, function(result){
     var card = document.getElementById('order-' + orderId);
-    card.outerHTML = '<div class="placeholder-card" style="border-color:var(--teal); border-style:solid;">✅ ' + orderId + ' 驗收完成，已寫入批次編號 ' + result.trId + '</div>';
+    var doneMsg = result.delivered
+      ? ('✅ ' + orderId + ' 驗收完成，已寫入批次編號 ' + result.trId)
+      : ('✅ ' + orderId + ' 已確認完成，本次品項皆未到貨（未寫入門市進貨單）');
+    card.outerHTML = '<div class="placeholder-card" style="border-color:var(--teal); border-style:solid;">' + doneMsg + '</div>';
   }, function(err){
     btn.disabled = false;
     btn.textContent = '確認驗收 送出';
