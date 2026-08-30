@@ -73,7 +73,7 @@
     width:62px; text-align:center; padding:7px 4px; border-radius:10px; border:1.5px solid var(--gold);
     font-weight:800; font-size:15.5px; background:var(--gold-light);
   }
-  .wh-row{display:flex; gap:6px; margin-top:8px;}
+  .wh-row{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
   .wh-pill{
     padding:5px 10px; border-radius:8px; border:1px solid var(--line-border); background:var(--cream);
     font-size:17.5px; font-weight:700; color:var(--ink-soft); cursor:pointer;
@@ -210,7 +210,7 @@ document.getElementById('bind-submit-btn').addEventListener('click', function(){
   });
 });
 
-var WAREHOUSES = ['A倉', 'B倉', 'CC倉'];
+var WAREHOUSES = ['A倉', 'B倉', 'CC倉', '正氣', '鐵花'];
 var orderState = {}; // orderId -> {qty:{code:qty}, wh:{code:warehouse}, ordered:{code:qty}}
 
 function showMainContent(name, role){
