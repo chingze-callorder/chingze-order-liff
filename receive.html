@@ -55,7 +55,7 @@
   .order-card .oc-id{font-size:16.5px; font-weight:800; color:var(--teal-dark);}
   .order-card .oc-meta{font-size:16.5px; color:var(--ink-soft); margin-top:2px;}
   .receive-item{
-    border-top:1px dashed var(--line-border); padding:10px 0; display:flex; align-items:center; gap:12px;
+    border-top:1px dashed var(--line-border); padding:10px 0; display:flex; align-items:flex-start; gap:12px;
   }
   .check-circle{
     width:30px; height:30px; border-radius:50%; border:2px solid var(--line-border);
@@ -66,6 +66,12 @@
   .receive-info{flex:1;}
   .receive-info .name{font-weight:700; font-size:15.5px;}
   .receive-info .meta{font-size:17.5px; color:var(--ink-soft); margin-top:2px;}
+  .wh-row{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
+  .wh-pill{
+    padding:6px 11px; border-radius:8px; border:1px solid var(--line-border); background:var(--cream);
+    font-size:13px; font-weight:700; color:var(--ink-soft); cursor:pointer;
+  }
+  .wh-pill.sel{background:var(--teal-light); border-color:var(--teal); color:var(--teal-dark);}
   .qtybox-wrap{display:flex; align-items:center; gap:6px; flex-shrink:0;}
   .qty-box{
     min-width:50px; text-align:center; padding:9px 12px; border-radius:10px; background:var(--teal);
@@ -291,19 +297,27 @@ function loadShippedOrders(){
   });
 }
 
+var WAREHOUSES = ['A倉', 'B倉', 'CC倉', '正氣', '鐵花'];
+
 function renderShippedCard(order){
-  receiveState[order.orderId] = { qty: {}, checked: {}, shipped: {} };
+  receiveState[order.orderId] = { qty: {}, checked: {}, shipped: {}, wh: {}, deliverer: '' };
   order.items.forEach(function(it){
     receiveState[order.orderId].qty[it.code] = it.shippedQty;
     receiveState[order.orderId].shipped[it.code] = it.shippedQty;
     receiveState[order.orderId].checked[it.code] = false;
+    receiveState[order.orderId].wh[it.code] = 'A倉';
   });
 
   var itemsHtml = order.items.map(function(it){
+    var whPills = WAREHOUSES.map(function(w, idx){
+      return '<div class="wh-pill' + (idx===0?' sel':'') + '" onclick="selItemWarehouse(\'' + order.orderId + '\',\'' + it.code + '\',this,\'' + w + '\')">' + w + '</div>';
+    }).join('');
     return '<div class="receive-item" id="ritem-' + order.orderId + '-' + it.code + '">' +
       '<div class="check-circle" onclick="toggleCheck(\'' + order.orderId + '\',\'' + it.code + '\')" id="chk-' + order.orderId + '-' + it.code + '">✓</div>' +
       '<div class="receive-info"><div class="name">' + it.name + '</div>' +
-      '<div class="meta">' + it.spec + '　出貨數量：' + it.shippedQty + '</div></div>' +
+      '<div class="meta">' + it.spec + '　叫貨數量：' + it.shippedQty + '</div>' +
+      '<div class="wh-row" id="wh-' + order.orderId + '-' + it.code + '">' + whPills + '</div>' +
+      '</div>' +
       '<div class="qtybox-wrap"><div class="qty-box" id="qbox-' + order.orderId + '-' + it.code + '" onclick="openQtyInput(\'' + order.orderId + '\',\'' + it.code + '\')">' + it.shippedQty + '</div></div>' +
       '</div>';
   }).join('');
@@ -315,16 +329,24 @@ function renderShippedCard(order){
   return '<div class="order-card" id="order-' + order.orderId + '">' +
     '<div class="oc-head">' +
     '<div class="oc-id">' + order.orderId + '</div>' +
-    '<div class="oc-meta">出貨時間：' + order.time + '　配送人員：' + order.deliverer + '</div>' +
+    '<div class="oc-meta">叫貨時間：' + order.time + '　叫貨人：' + order.orderer + '</div>' +
     '</div>' +
     itemsHtml +
-    '<div class="receiver-auto" id="receiver-auto-' + order.orderId + '">' +
+    '<div class="label" style="margin:14px 0 6px;">配送人員</div>' +
+    '<input type="text" class="deliverer-input" id="deliverer-' + order.orderId + '" placeholder="請輸入送貨人員姓名" oninput="receiveState[\'' + order.orderId + '\'].deliverer=this.value">' +
+    '<div class="receiver-auto" id="receiver-auto-' + order.orderId + '" style="margin-top:14px;">' +
     '<div class="receiver-name">👤 <span id="receiver-name-' + order.orderId + '">' + currentReceiver + '</span><span class="receiver-tag">目前 LINE 帳號</span></div>' +
     '<button class="switch-link" onclick="toggleReceiverSwitch(\'' + order.orderId + '\')">不是我，換人 →</button>' +
     '</div>' +
     '<div id="receiver-switch-' + order.orderId + '" class="chip-row" style="display:none; margin-top:8px;">' + receiverOptionsHtml + '</div>' +
     '<button class="receive-submit-btn" id="submitbtn-' + order.orderId + '" onclick="submitReceiveOrder(\'' + order.orderId + '\')">確認驗收 送出</button>' +
     '</div>';
+}
+
+function selItemWarehouse(orderId, code, elm, w){
+  document.querySelectorAll('#wh-' + orderId + '-' + code + ' .wh-pill').forEach(function(x){ x.classList.remove('sel'); });
+  elm.classList.add('sel');
+  receiveState[orderId].wh[code] = w;
 }
 
 function toggleCheck(orderId, code){
@@ -371,7 +393,8 @@ function selReceiver(orderId, elm, name){
 function submitReceiveOrder(orderId){
   var s = receiveState[orderId];
   var receiverName = s.receiverOverride || currentReceiver;
-  var items = Object.keys(s.qty).map(function(code){ return { code: code, qty: s.qty[code] }; });
+  var delivererName = (s.deliverer || '').trim();
+  var items = Object.keys(s.qty).map(function(code){ return { code: code, qty: s.qty[code], warehouse: s.wh[code] }; });
 
   var btn = document.getElementById('submitbtn-' + orderId);
   btn.disabled = true;
@@ -381,6 +404,7 @@ function submitReceiveOrder(orderId){
     name: window.currentUserName,
     orderId: orderId,
     receiverName: receiverName,
+    delivererName: delivererName,
     items: JSON.stringify(items)
   }, function(result){
     var card = document.getElementById('order-' + orderId);
