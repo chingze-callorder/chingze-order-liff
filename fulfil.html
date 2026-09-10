@@ -58,6 +58,10 @@
     background:var(--gold-light); color:#7a5b13; font-size:17.5px; font-weight:800;
     padding:3px 10px; border-radius:999px; flex-shrink:0;
   }
+  .zero-all-btn{
+    margin-top:8px; padding:9px 12px; border-radius:10px; background:#fbe4de; color:#c0503d;
+    font-size:14.5px; font-weight:700; text-align:center; cursor:pointer; line-height:1.5;
+  }
   .fulfil-item{border-top:1px dashed var(--line-border); padding:10px 0;}
   .fulfil-item .fi-name{font-weight:700; font-size:15.5px;}
   .fulfil-item .fi-spec{font-size:16.5px; color:var(--ink-soft); margin:2px 0 8px;}
@@ -304,6 +308,7 @@ function renderOrderCard(order){
     '<div><div class="oc-id">' + order.orderId + '</div><div class="oc-meta">' + order.time + '　叫貨人：' + order.orderer + '</div></div>' +
     '<div class="oc-store">' + order.store + '</div>' +
     '</div>' +
+    '<div class="zero-all-btn" onclick="zeroAllItems(\'' + order.orderId + '\')">🔄 全部出貨數量歸零（產能不足時先按這個，再針對有出貨的品項輸入數量）</div>' +
     itemsHtml +
     '<button class="fulfil-submit-btn" id="submitbtn-' + order.orderId + '" onclick="submitFulfilOrder(\'' + order.orderId + '\')">確認出貨</button>' +
     '</div>';
@@ -313,6 +318,23 @@ function selItemWarehouse(orderId, code, elm, w){
   document.querySelectorAll('#wh-' + orderId + '-' + code + ' .wh-pill').forEach(function(x){ x.classList.remove('sel'); });
   elm.classList.add('sel');
   orderState[orderId].wh[code] = w;
+}
+
+function zeroAllItems(orderId){
+  var state = orderState[orderId];
+  Object.keys(state.qty).forEach(function(code){
+    state.qty[code] = 0;
+    var box = document.getElementById('qbox-' + orderId + '-' + code);
+    if (box) {
+      box.outerHTML = '<div class="qty-box" id="qbox-' + orderId + '-' + code + '" onclick="openQtyInput(\'' + orderId + '\',\'' + code + '\')">0</div>';
+    }
+    var ordered = state.ordered[code];
+    var flag = document.getElementById('short-' + orderId + '-' + code);
+    if (flag && ordered > 0) {
+      flag.style.display = 'inline-block';
+      flag.textContent = '⚠ 今日缺貨 ' + ordered + '（原叫貨 ' + ordered + '，出貨 0）';
+    }
+  });
 }
 
 function openQtyInput(orderId, code){
